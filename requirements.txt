@@ -1,0 +1,2 @@
+# No third-party dependencies.
+# The app uses Python's standard library: tkinter, ctypes, and platform APIs.
