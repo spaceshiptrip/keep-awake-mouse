@@ -25,6 +25,8 @@ except ImportError:
 
 
 DEFAULT_INTERVAL_SECONDS = 20
+PROGRESS_BAR_HEIGHT = 14
+VERSION = "0.1.1"
 
 
 class MouseMoveError(RuntimeError):
@@ -187,13 +189,16 @@ class MouseBackend:
 class MouseMoverApp(tk.Tk if tk is not None else object):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Mouse Mover")
-        self.geometry("360x230")
+        self.title(f"Mouse Mover {VERSION}")
+        self.geometry("380x285")
         self.resizable(False, False)
 
         self.backend = MouseBackend()
         self.running = False
         self.after_id: Optional[str] = None
+        self.progress_after_id: Optional[str] = None
+        self.progress_started_at = 0.0
+        self.progress_interval = DEFAULT_INTERVAL_SECONDS
         self.jiggle_count = 0
         self.awake_guard_available = True
 
@@ -212,7 +217,7 @@ class MouseMoverApp(tk.Tk if tk is not None else object):
         frame = ttk.Frame(self, padding=20)
         frame.pack(fill=tk.BOTH, expand=True)
 
-        title = ttk.Label(frame, text="Mouse Mover", font=("", 18, "bold"))
+        title = ttk.Label(frame, text=f"Mouse Mover {VERSION}", font=("", 18, "bold"))
         title.pack(anchor=tk.W)
 
         subtitle = ttk.Label(
@@ -242,6 +247,22 @@ class MouseMoverApp(tk.Tk if tk is not None else object):
         self.stop_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
 
         ttk.Label(frame, textvariable=self.status_var, wraplength=315).pack(anchor=tk.W)
+        self.progress_canvas = tk.Canvas(
+            frame,
+            height=PROGRESS_BAR_HEIGHT,
+            highlightthickness=0,
+            background="#d7d7d7",
+        )
+        self.progress_canvas.pack(fill=tk.X, pady=(10, 2))
+        self.progress_fill = self.progress_canvas.create_rectangle(
+            0,
+            0,
+            0,
+            PROGRESS_BAR_HEIGHT,
+            fill="#22a447",
+            outline="",
+        )
+        self.progress_canvas.bind("<Configure>", self._resize_progress)
         ttk.Label(frame, textvariable=self.count_var).pack(anchor=tk.W, pady=(6, 0))
 
     def start(self) -> None:
@@ -258,7 +279,9 @@ class MouseMoverApp(tk.Tk if tk is not None else object):
         self.running = True
         self.start_button.configure(state=tk.DISABLED)
         self.stop_button.configure(state=tk.NORMAL)
+        self.progress_canvas.configure(background="#cfead6")
         self._set_running_status(interval)
+        self._start_progress(interval)
         self._tick()
 
     def stop(self) -> None:
@@ -266,10 +289,15 @@ class MouseMoverApp(tk.Tk if tk is not None else object):
         if self.after_id is not None:
             self.after_cancel(self.after_id)
             self.after_id = None
+        if self.progress_after_id is not None:
+            self.after_cancel(self.progress_after_id)
+            self.progress_after_id = None
 
         self.backend.stop_awake_guard()
         self.start_button.configure(state=tk.NORMAL)
         self.stop_button.configure(state=tk.DISABLED)
+        self.progress_canvas.configure(background="#d7d7d7")
+        self._set_progress_fraction(0.0)
         self.status_var.set("Stopped")
 
     def _tick(self) -> None:
@@ -282,12 +310,52 @@ class MouseMoverApp(tk.Tk if tk is not None else object):
             self.jiggle_count += 1
             self.count_var.set(f"Jiggles: {self.jiggle_count}")
             self._set_running_status(interval)
+            self._start_progress(interval)
         except Exception as exc:  # noqa: BLE001 - GUI should show native API failures.
             self.stop()
             messagebox.showerror("Mouse Mover", f"Could not move the mouse:\n{exc}")
             return
 
         self.after_id = self.after(interval * 1000, self._tick)
+
+    def _start_progress(self, interval: int) -> None:
+        if self.progress_after_id is not None:
+            self.after_cancel(self.progress_after_id)
+            self.progress_after_id = None
+
+        self.progress_started_at = time.monotonic()
+        self.progress_interval = interval
+        self._update_progress()
+
+    def _update_progress(self) -> None:
+        if not self.running:
+            return
+
+        elapsed = time.monotonic() - self.progress_started_at
+        fraction = min(elapsed / self.progress_interval, 1.0)
+        self._set_progress_fraction(fraction)
+        self.progress_after_id = self.after(100, self._update_progress)
+
+    def _set_progress_fraction(self, fraction: float) -> None:
+        width = self.progress_canvas.winfo_width()
+        fill_width = max(0, width * fraction)
+        if self.running:
+            fill_width = max(12, fill_width)
+
+        self.progress_canvas.coords(
+            self.progress_fill,
+            0,
+            0,
+            fill_width,
+            PROGRESS_BAR_HEIGHT,
+        )
+
+    def _resize_progress(self, _event: tk.Event) -> None:
+        if self.running:
+            elapsed = time.monotonic() - self.progress_started_at
+            self._set_progress_fraction(min(elapsed / self.progress_interval, 1.0))
+        else:
+            self._set_progress_fraction(0.0)
 
     def _read_interval(self, show_error: bool = True) -> Optional[int]:
         try:
@@ -355,7 +423,7 @@ def run_cli(interval: int) -> None:
         print("Stopped.")
 
 
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Jiggle the mouse every N seconds to keep the computer awake."
     )
@@ -371,6 +439,11 @@ if __name__ == "__main__":
         action="store_true",
         help="run in the terminal instead of opening the Tk GUI",
     )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {VERSION}",
+    )
     args = parser.parse_args()
 
     if args.interval < 1:
@@ -382,3 +455,7 @@ if __name__ == "__main__":
         app.mainloop()
     else:
         run_cli(args.interval)
+
+
+if __name__ == "__main__":
+    main()
