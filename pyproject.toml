@@ -1,6 +1,6 @@
 [project]
 name = "keep-awake-mouse"
-version = "0.1.1"
+version = "0.1.2"
 description = "Tiny Python app that jiggles the mouse to keep the computer awake."
 readme = "README.md"
 requires-python = ">=3.9"

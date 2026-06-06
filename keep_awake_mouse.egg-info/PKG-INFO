@@ -1,3 +1,10 @@
+Metadata-Version: 2.4
+Name: keep-awake-mouse
+Version: 0.1.2
+Summary: Tiny Python app that jiggles the mouse to keep the computer awake.
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+
 # Mouse Mover
 
 A tiny Python app that jiggles the mouse every configurable number of seconds.
