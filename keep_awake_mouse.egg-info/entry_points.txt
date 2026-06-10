@@ -1,2 +1,0 @@
-[console_scripts]
-mouse-mover = mouse_mover:main
