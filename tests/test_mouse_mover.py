@@ -65,6 +65,12 @@ class MouseMoverTests(unittest.TestCase):
         self.assertEqual(mouse_mover.PROGRESS_BAR_HEIGHT, 14)
         self.assertEqual(mouse_mover.DEFAULT_INTERVAL_SECONDS, 20)
 
+    def test_app_and_url_hitter_versions_match(self) -> None:
+        import mouse_mover
+        import url_hitter
+
+        self.assertEqual(mouse_mover.VERSION, url_hitter.VERSION)
+
 
 if __name__ == "__main__":
     unittest.main()

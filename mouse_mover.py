@@ -10,9 +10,11 @@ from __future__ import annotations
 import ctypes
 import argparse
 import platform
+import queue
 import signal
 import sys
 import time
+from pathlib import Path
 from typing import Optional
 
 try:
@@ -23,11 +25,20 @@ except ImportError:
     messagebox = None
     ttk = None
 
+from url_hitter import (
+    ConfigError,
+    UrlHitter,
+    UrlHitterConfig,
+    DEFAULT_CONFIG_NAME,
+    DEFAULT_MAX_INTERVAL_SECONDS,
+    DEFAULT_MIN_INTERVAL_SECONDS,
+)
+
 
 DEFAULT_INTERVAL_SECONDS = 20
 PROGRESS_BAR_HEIGHT = 14
 WINDOW_WIDTH = 380
-VERSION = "0.1.2"
+VERSION = "0.2.0"
 
 
 class MouseMoveError(RuntimeError):
@@ -206,6 +217,24 @@ class MouseMoverApp(tk.Tk if tk is not None else object):
         self.status_var = tk.StringVar(value=f"Ready on {self.backend.name}")
         self.count_var = tk.StringVar(value="Jiggles: 0")
 
+        # URL Refresher state (runs independently of the mouse jiggle).
+        self.url_hitter: Optional[UrlHitter] = None
+        self.url_event_queue: "queue.Queue[tuple]" = queue.Queue()
+        self.url_poll_after_id: Optional[str] = None
+        self.url_config_path = Path(__file__).resolve().parent / DEFAULT_CONFIG_NAME
+        loaded = self._load_url_config()
+        self.url_min_var = tk.StringVar(
+            value=str(loaded.min_interval_seconds if loaded else DEFAULT_MIN_INTERVAL_SECONDS)
+        )
+        self.url_max_var = tk.StringVar(
+            value=str(loaded.max_interval_seconds if loaded else DEFAULT_MAX_INTERVAL_SECONDS)
+        )
+        self.url_hours_var = tk.StringVar(
+            value=str(int(loaded.duration_hours) if loaded else 0)
+        )
+        self.url_status_var = tk.StringVar(value=self._initial_url_status(loaded))
+        self.url_count_var = tk.StringVar(value="URL hits: 0")
+
         self._build_ui()
         self.update_idletasks()
         self.geometry(f"{WINDOW_WIDTH}x{self.winfo_reqheight()}")
@@ -267,6 +296,48 @@ class MouseMoverApp(tk.Tk if tk is not None else object):
         )
         self.progress_canvas.bind("<Configure>", self._resize_progress)
         ttk.Label(frame, textvariable=self.count_var).pack(anchor=tk.W, pady=(6, 0))
+
+        self._build_url_ui(frame)
+
+    def _build_url_ui(self, frame: "ttk.Frame") -> None:
+        ttk.Separator(frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(18, 12))
+
+        ttk.Label(frame, text="URL Refresher", font=("", 13, "bold")).pack(anchor=tk.W)
+        ttk.Label(
+            frame,
+            text="Hits a list of URLs at random intervals in the background.",
+            wraplength=315,
+        ).pack(anchor=tk.W, pady=(2, 10))
+
+        every_row = ttk.Frame(frame)
+        every_row.pack(fill=tk.X)
+        ttk.Label(every_row, text="Every").pack(side=tk.LEFT)
+        ttk.Entry(every_row, width=6, textvariable=self.url_min_var).pack(
+            side=tk.LEFT, padx=(8, 4)
+        )
+        ttk.Label(every_row, text="to").pack(side=tk.LEFT)
+        ttk.Entry(every_row, width=6, textvariable=self.url_max_var).pack(
+            side=tk.LEFT, padx=4
+        )
+        ttk.Label(every_row, text="seconds").pack(side=tk.LEFT)
+
+        hours_row = ttk.Frame(frame)
+        hours_row.pack(fill=tk.X, pady=(8, 0))
+        ttk.Label(hours_row, text="For").pack(side=tk.LEFT)
+        ttk.Entry(hours_row, width=6, textvariable=self.url_hours_var).pack(
+            side=tk.LEFT, padx=8
+        )
+        ttk.Label(hours_row, text="hours (0 = until stopped)").pack(side=tk.LEFT)
+
+        self.url_toggle_button = ttk.Button(
+            frame, text="Start URL Refresher", command=self.toggle_url_hitter
+        )
+        self.url_toggle_button.pack(fill=tk.X, pady=12)
+
+        ttk.Label(frame, textvariable=self.url_status_var, wraplength=315).pack(
+            anchor=tk.W
+        )
+        ttk.Label(frame, textvariable=self.url_count_var).pack(anchor=tk.W, pady=(6, 0))
 
     def start(self) -> None:
         interval = self._read_interval()
@@ -379,9 +450,106 @@ class MouseMoverApp(tk.Tk if tk is not None else object):
         suffix = "" if self.awake_guard_available else " (awake guard unavailable)"
         self.status_var.set(f"Running every {interval} seconds{suffix}")
 
+    # ------------------------------------------------------------------
+    # URL Refresher
+    # ------------------------------------------------------------------
+    def _load_url_config(self) -> Optional[UrlHitterConfig]:
+        if not self.url_config_path.exists():
+            return None
+        try:
+            return UrlHitterConfig.from_config_file(self.url_config_path)
+        except ConfigError:
+            return None
+
+    def _initial_url_status(self, loaded: Optional[UrlHitterConfig]) -> str:
+        if loaded is None:
+            return f"No {self.url_config_path.name} found next to the app."
+        return f"Ready: {len(loaded.urls)} url(s) from {self.url_config_path.name}"
+
+    def toggle_url_hitter(self) -> None:
+        if self.url_hitter is not None and self.url_hitter.is_running():
+            self.stop_url_hitter()
+        else:
+            self.start_url_hitter()
+
+    def start_url_hitter(self) -> None:
+        loaded = self._load_url_config()
+        if loaded is None or not loaded.urls:
+            messagebox.showerror(
+                "URL Refresher",
+                f"No URLs found. Create {self.url_config_path.name} (see "
+                "url_config.example.json) next to the app.",
+            )
+            return
+
+        try:
+            config = UrlHitterConfig(
+                urls=loaded.urls,
+                min_interval_seconds=int(self.url_min_var.get()),
+                max_interval_seconds=int(self.url_max_var.get()),
+                duration_hours=float(self.url_hours_var.get()),
+                timeout_seconds=loaded.timeout_seconds,
+                user_agent=loaded.user_agent,
+            )
+        except (ValueError, ConfigError) as exc:
+            messagebox.showerror("URL Refresher", str(exc))
+            return
+
+        # The worker runs on a background thread; it must not touch Tk directly,
+        # so events are marshalled back through a queue drained on the main loop.
+        self.url_hitter = UrlHitter(
+            config, on_event=lambda kind, **info: self.url_event_queue.put((kind, info))
+        )
+        self.url_hitter.start()
+        self.url_toggle_button.configure(text="Stop URL Refresher")
+        self._poll_url_events()
+
+    def stop_url_hitter(self) -> None:
+        if self.url_hitter is not None:
+            self.url_hitter.stop(join=False)
+        self.url_toggle_button.configure(text="Start URL Refresher")
+
+    def _poll_url_events(self) -> None:
+        try:
+            while True:
+                kind, info = self.url_event_queue.get_nowait()
+                self._handle_url_event(kind, info)
+        except queue.Empty:
+            pass
+
+        if self.url_hitter is not None and self.url_hitter.is_running():
+            self.url_poll_after_id = self.after(150, self._poll_url_events)
+        else:
+            self.url_poll_after_id = None
+
+    def _handle_url_event(self, kind: str, info: dict) -> None:
+        if kind == "started":
+            window = (
+                "until stopped"
+                if info.get("duration_hours", 0) == 0
+                else f"for {info['duration_hours']:g}h"
+            )
+            self.url_status_var.set(
+                f"Hitting {info['url_count']} url(s) every "
+                f"{info['min_interval']}–{info['max_interval']}s, {window}."
+            )
+        elif kind == "hit":
+            self.url_count_var.set(f"URL hits: {info['count']}")
+            timestamp = time.strftime("%H:%M:%S")
+            self.url_status_var.set(
+                f"{timestamp} refreshed {info['url']} → {info['status']}"
+            )
+        elif kind == "error":
+            self.url_status_var.set(f"Error on {info['url']}: {info['message']}")
+        elif kind == "stopped":
+            self.url_status_var.set(f"Stopped ({info['reason']}).")
+            self.url_toggle_button.configure(text="Start URL Refresher")
+
     def _on_close(self) -> None:
         if self.running:
             self.stop()
+        if self.url_hitter is not None:
+            self.url_hitter.stop(join=False)
         self.destroy()
 
 
