@@ -3,3 +3,7 @@ __pycache__/
 .venv/
 keep_awake_mouse.egg-info/
 
+# Personal URL lists (keep the .example.* files tracked)
+url_config.json
+urls.txt
+

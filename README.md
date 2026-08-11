@@ -28,6 +28,58 @@ python mouse_mover.py --cli --interval 20
 ```
 
 
+## URL Refresher
+
+The app can also hit a list of URLs at random intervals in the background to keep
+sessions or dashboards warm. It uses only Python's standard library (`urllib`) —
+there is no browser, so page JavaScript is **not** executed. Each refresh is a plain
+GET per URL, which is enough to keep endpoints and sessions alive.
+
+### Configure the URLs
+
+Create a `url_config.json` next to the app (copy `url_config.example.json`):
+
+```json
+{
+  "urls": ["https://example.com/", "https://httpbin.org/get"],
+  "urls_file": "urls.txt",
+  "min_interval_seconds": 60,
+  "max_interval_seconds": 300,
+  "duration_hours": 0,
+  "timeout_seconds": 15
+}
+```
+
+- Provide URLs inline via `urls`, or point `urls_file` at a text file with one URL
+  per line (blank lines and `#` comments are ignored — see `urls.example.txt`).
+- Each cycle waits a random number of seconds between `min_interval_seconds` and
+  `max_interval_seconds`.
+- `duration_hours` is how long to run; **`0` means run until you stop it.**
+
+Your personal `url_config.json` and `urls.txt` are gitignored.
+
+### Run it standalone
+
+```sh
+python url_hitter.py --config url_config.json
+```
+
+Or without a config file:
+
+```sh
+python url_hitter.py --url https://example.com/ --url https://httpbin.org/get --min 30 --max 120 --hours 2
+```
+
+Stop it with `Ctrl+C`.
+
+### From the dialog
+
+The Tk dialog has a **URL Refresher** section below the mouse controls, independent
+of the jiggle. It reads `url_config.json` for the URL list, lets you set the min/max
+seconds and the number of hours (0 = until stopped), and has a single button to turn
+it on and off. A status line and hit counter show progress.
+
+
 ## Windows PowerShell Script
 
 For a simple Windows-only keep-awake helper, run the included PowerShell script:
@@ -145,7 +197,7 @@ Make sure `~/.local/bin` is on your `PATH`.
 
 ## Versioning
 
-The current app version is `0.1.2`.
+The current app version is `0.2.0`.
 
 The version is visible in two places:
 
@@ -286,7 +338,7 @@ Make sure `~/.local/bin` is on your `PATH`.
 
 ## Versioning
 
-The current app version is `0.1.2`.
+The current app version is `0.2.0`.
 
 The version is visible in two places:
 
@@ -399,7 +451,7 @@ Make sure `~/.local/bin` is on your `PATH`.
 
 ## Versioning
 
-The current app version is `0.1.2`.
+The current app version is `0.2.0`.
 
 The version is visible in two places:
 

@@ -1,0 +1,12 @@
+{
+  "urls": [
+    "https://example.com/",
+    "https://httpbin.org/get"
+  ],
+  "urls_file": "urls.txt",
+  "min_interval_seconds": 60,
+  "max_interval_seconds": 300,
+  "duration_hours": 0,
+  "timeout_seconds": 15,
+  "user_agent": "keep-awake-url-hitter/0.2.0"
+}

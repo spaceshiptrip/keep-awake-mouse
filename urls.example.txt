@@ -1,0 +1,4 @@
+# One URL per line. Blank lines and lines starting with # are ignored.
+# Copy this to urls.txt (or point url_config.json at your own file).
+https://example.com/
+https://httpbin.org/get
