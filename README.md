@@ -137,6 +137,60 @@ Then reinstall the uv tool with the Tk-capable Python if needed:
 uv tool install --force --python .venv/bin/python .
 ```
 
+### Why the dialog sometimes falls back to CLI (Homebrew gotcha)
+
+`import tkinter` always works because it is pure Python, but the actual GUI needs
+the compiled `_tkinter` C module. On Homebrew, `_tkinter` is **not** part of Python
+itself — it ships as a separate, version-locked formula (`python-tk@3.12`,
+`python-tk@3.13`, `python-tk@3.14`, …). Installing it for one Python version does
+**nothing** for another. So if you install `python-tk@3.12` and later run the app
+under 3.13 or 3.14, you get `ModuleNotFoundError: No module named '_tkinter'` and the
+app drops to terminal mode.
+
+First, find out which Python you are actually running (a venv can differ from the
+bare `python3` on your `PATH`):
+
+```sh
+python3 -c "import sys; print(sys.executable); print('venv:', sys.prefix != sys.base_prefix)"
+```
+
+List which Tk formulae you have, so you know which versions are covered:
+
+```sh
+brew list --versions | grep python-tk
+```
+
+Then pick one of these fixes:
+
+**A. Run with a Python that already has Tk.** If, say, only `python-tk@3.12` is
+installed, run the app directly with Homebrew's 3.12 — no new install needed:
+
+```sh
+/opt/homebrew/opt/python@3.12/bin/python3.12 mouse_mover.py
+```
+
+**B. Install Tk for the Python you use.** For a 3.13 venv:
+
+```sh
+brew install python-tk@3.13
+```
+
+You do not need to recreate the venv — it shares the base interpreter's `_tkinter`.
+Re-run and check:
+
+```sh
+python3 -c 'import tkinter; print("tkinter OK", tkinter.TkVersion)' && python3 mouse_mover.py
+```
+
+**C. For the installed `mouse-mover` command,** pin the uv tool to a Tk-capable
+Python so the GUI always works:
+
+```sh
+uv tool install --force --python /opt/homebrew/opt/python@3.12/bin/python3.12 .
+```
+
+The URL Refresher (`python url_hitter.py ...`) needs no Tk and runs fine either way.
+
 ## Install with uv
 
 This repo can be installed as a uv tool, which creates a `mouse-mover` command
