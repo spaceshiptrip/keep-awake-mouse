@@ -9,3 +9,11 @@ dependencies = []
 [project.scripts]
 mouse-mover = "mouse_mover:main"
 url-hitter = "url_hitter:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["mouse_mover", "url_hitter"]
+

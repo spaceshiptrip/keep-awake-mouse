@@ -7,3 +7,4 @@ keep_awake_mouse.egg-info/
 url_config.json
 urls.txt
 
+build/
